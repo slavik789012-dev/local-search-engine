@@ -1,0 +1,15 @@
+# Сборка CMake
+build/
+cmake-build-*/
+out/
+
+# Исполняемые файлы
+*.exe
+*.out
+*.app
+
+# Тестовые папки и настройки редакторов
+docs/
+.idea/
+.vscode/
+.vs/
