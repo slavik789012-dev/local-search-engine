@@ -5,6 +5,7 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 #include "inverted_index.h"
 #include "search_server.h"
 
@@ -34,21 +35,38 @@ int main(int argc, char* argv[]) {
             throw std::invalid_argument("Invalid directory path provided.");
         }
 
-        InvertedIndex index;
-        bool has_files = false;
-
+        std::vector<fs::path> text_files;
         for (const auto& entry : fs::recursive_directory_iterator(dir_path)) {
             if (entry.is_regular_file() && entry.path().extension() == ".txt") {
-                std::string text = ReadFile(entry.path());
-                index.AddDocument(entry.path().string(), text);
-                has_files = true;
+                text_files.push_back(entry.path());
             }
         }
-
-        if (!has_files) {
+        if (text_files.empty()) {
             throw std::runtime_error("Directory is empty or contains no .txt files.");
         }
+        size_t num_threads = std::thread::hardware_concurrency();
+        if (num_threads == 0) num_threads = 4;
+        if (num_threads > text_files.size()) num_threads = text_files.size();
+        std::vector<std::thread> threads;
+        size_t chunk_size = text_files.size() / num_threads;
 
+        InvertedIndex index;
+        for (size_t i = 0; i < num_threads; ++i) {
+            size_t start_idx = i * chunk_size;
+            size_t end_idx = (i == num_threads - 1) ? text_files.size() : start_idx + chunk_size;
+            threads.emplace_back([start_idx, end_idx, &text_files, &index]() {
+                for (size_t j = start_idx; j < end_idx; ++j) {
+                    std::string text = ReadFile(text_files[j]);
+                    std::cout << "Thread read " << text.size() << " bytes from file\n";
+                    index.AddDocument(text_files[j].string(), text);
+                }
+            });
+        }
+     
+        for (auto& t : threads) {
+            if (t.joinable()) t.join();
+        }
+        std::cout << "Total number of documents in the index: " << index.GetSize() << "\n";
         SearchServer server(index);
         std::string query;
         while (true) {
@@ -56,6 +74,28 @@ int main(int argc, char* argv[]) {
             if (!std::getline(std::cin, query)) break;
             if (query.empty()) continue;
             if (query == "!exit") break;
+
+            // --- НАЧАЛО ДИАГНОСТИКИ ---
+            std::cout << "\n[DEBUG] Original query: {" << query << "}\n";
+            std::vector<std::string_view> tokens = InvertedIndex::SplitBySpaces(query);
+
+            std::cout << "[DEBUG] The query has been split into: " << tokens.size() << " word(s).\n";
+            for (std::string_view view : tokens) {
+                std::string word = InvertedIndex::NormalizeWord(view);
+                std::cout << "[DEBUG] A note after normalization: {" << word << "}\n";
+
+                // Проверяем, есть ли такое слово в индексе
+                const auto& entries = index.GetWordEntries(word);
+                if (entries.empty()) {
+                    std::cout << "[DEBUG] ERROR: There isn't {" << word << "} not even in the dictionary!\n";
+                }
+                else {
+                    std::cout << "[DEBUG] SUCCESS: The Word {" << word << "} found in " << entries.size() << " documents.\n";
+                }
+            }
+            std::cout << "-----------------------\n";
+            // --- КОНЕЦ ДИАГНОСТИКИ ---
+
             auto results = server.search(query);
             if (results.empty()) std::cout << "No matches found.\n";
             else {
@@ -71,6 +111,5 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
-
     return 0;
 }
