@@ -50,23 +50,46 @@ int main(int argc, char* argv[]) {
         std::vector<std::thread> threads;
         size_t chunk_size = text_files.size() / num_threads;
 
+
         InvertedIndex index;
-        for (size_t i = 0; i < num_threads; ++i) {
-            size_t start_idx = i * chunk_size;
-            size_t end_idx = (i == num_threads - 1) ? text_files.size() : start_idx + chunk_size;
-            threads.emplace_back([start_idx, end_idx, &text_files, &index]() {
-                for (size_t j = start_idx; j < end_idx; ++j) {
-                    std::string text = ReadFile(text_files[j]);
-                    std::cout << "Thread read " << text.size() << " bytes from file\n";
-                    index.AddDocument(text_files[j].string(), text);
-                }
-            });
+        const std::string cache_filename = "index.bin";
+
+        std::cout << "Trying to load the index from cache (" << cache_filename << ")...\n";
+
+        if (index.load(cache_filename)) {
+            std::cout << "Success! Index loaded from disk.\n";
         }
-     
-        for (auto& t : threads) {
-            if (t.joinable()) t.join();
+        else {
+            std::cout << "Cache not found. Starting multithreaded indexing...\n";
+
+            for (size_t i = 0; i < num_threads; ++i) {
+                size_t start_idx = i * chunk_size;
+                size_t end_idx = (i == num_threads - 1) ? text_files.size() : start_idx + chunk_size;
+                threads.emplace_back([start_idx, end_idx, &text_files, &index]() {
+                    for (size_t j = start_idx; j < end_idx; ++j) {
+                        std::string text = ReadFile(text_files[j]);
+                        std::cout << "Thread read " << text.size() << " bytes from file\n";
+                        index.AddDocument(text_files[j].string(), text);
+                    }
+                    });
+            }
+
+            for (auto& t : threads) {
+                if (t.joinable()) t.join();
+            }
+            std::cout << "Total number of documents in the index: " << index.GetSize() << "\n";
+
+            std::cout << "Indexing completed. Saving to cache...\n";
+            if (index.save(cache_filename)) {
+                std::cout << "Cache saved successfully.\n";
+            }
+            else {
+                std::cerr << "Error: failed to save cache to file!\n";
+            }
         }
-        std::cout << "Total number of documents in the index: " << index.GetSize() << "\n";
+        std::cout << "Total documents in index: " << index.GetSize() << "\n";
+        std::cout << "Search engine is ready!\n";
+
         SearchServer server(index);
         std::string query;
         while (true) {
@@ -75,7 +98,6 @@ int main(int argc, char* argv[]) {
             if (query.empty()) continue;
             if (query == "!exit") break;
 
-            // --- НАЧАЛО ДИАГНОСТИКИ ---
             std::cout << "\n[DEBUG] Original query: {" << query << "}\n";
             std::vector<std::string_view> tokens = InvertedIndex::SplitBySpaces(query);
 
@@ -84,7 +106,6 @@ int main(int argc, char* argv[]) {
                 std::string word = InvertedIndex::NormalizeWord(view);
                 std::cout << "[DEBUG] A note after normalization: {" << word << "}\n";
 
-                // Проверяем, есть ли такое слово в индексе
                 const auto& entries = index.GetWordEntries(word);
                 if (entries.empty()) {
                     std::cout << "[DEBUG] ERROR: There isn't {" << word << "} not even in the dictionary!\n";
@@ -94,7 +115,6 @@ int main(int argc, char* argv[]) {
                 }
             }
             std::cout << "-----------------------\n";
-            // --- КОНЕЦ ДИАГНОСТИКИ ---
 
             auto results = server.search(query);
             if (results.empty()) std::cout << "No matches found.\n";

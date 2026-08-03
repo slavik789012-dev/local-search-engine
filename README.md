@@ -1,63 +1,42 @@
-# 🔍 Local Search Engine
+# Local Search Engine (Inverted Index)
 
-Быстрая локальная поисковая система для текстовых файлов, работающая в консоли. Проект реализует полнотекстовый поиск с ранжированием результатов на основе алгоритма **TF-IDF**. 
+A fast, multithreaded local search engine written in modern C++. This engine indexes `.txt` files in a specified directory and allows you to perform fast word searches using an Inverted Index data structure.
 
-Разработано для демонстрации уверенного владения современным C++ (C++17), алгоритмами и структурами данных, а также навыков профилирования производительности.
+## 🚀 Features
 
-## 🚀 Особенности и технические решения
-- **Оптимизированный скоринг:** В горячем цикле поиска вместо `std::unordered_map` используется заранее аллоцированный `std::vector`, что дает доступ за $O(1)$ и предотвращает деградацию производительности.
-- **Zero-allocation парсинг:** Использование `std::string_view` для токенизации текста без лишних выделений памяти.
-- **Эффективный Top-K:** Выборка лучших результатов поиска осуществляется с помощью `std::partial_sort`, что значительно быстрее полной сортировки массива.
-- **Современный стек:** C++17 (`std::filesystem`), CMake, Google Test (GTest) для модульного тестирования.
+* **Inverted Index Architecture:** Efficiently maps words to the documents they appear in, ensuring lightning-fast search queries.
+* **Multithreaded Indexing (New!):** Utilizes `std::thread` and hardware concurrency to parse multiple documents in parallel. This drastically reduces the initial indexing time for large sets of files. Thread-safe operations are guaranteed via `std::mutex`.
+* **Binary Caching & Serialization (New!):** Once the files are indexed, the engine saves the entire dictionary to a binary cache file (`index.bin`). On subsequent runs, the program loads instantly from the disk, completely skipping the expensive parsing phase.
+* **Smart Text Parsing:** Automatically handles whitespaces, tabs, newlines (`\n`, `\r`), and normalizes text by ignoring punctuation.
 
-## 🛠 Технологии
-- **Язык:** C++17
-- **Сборка:** CMake (3.14+)
-- **Тестирование:** Google Test (скачивается автоматически при сборке)
+## 🧠 How It Works
 
-## 📦 Инструкция по сборке
+1. **Initialization:** The program first checks for the existence of `index.bin`.
+2. **Fast Boot:** If the cache exists, the engine loads it directly into memory in milliseconds.
+3. **Parallel Parsing:** If the cache is missing (e.g., first run or deleted), the engine collects all `.txt` files and distributes them evenly across available CPU cores. Each thread reads and normalizes its chunk of files, safely merging the results into the global index.
+4. **Search:** The user enters a query. The engine normalizes the input and instantly returns the documents containing the requested words.
 
-Проект использует систему сборки CMake. Для компиляции выполните следующие команды в терминале:
+## 🛠️ Prerequisites
 
-```bash
-# 1. Клонирование репозитория (или просто зайдите в папку проекта)
-git clone <ссылка_на_ваш_репозиторий>
-cd LocalSearchEngine
+* A C++ compiler that supports **C++17** or higher (GCC, Clang, or MSVC).
+* CMake (optional, but recommended for building).
 
-# 2. Создание директории для сборки
-mkdir build
-cd build
+## 💻 Usage
 
-# 3. Генерация файлов сборки и компиляция
-cmake ..
-cmake --build .
+1. Place your text files (`.txt`) inside the target directory (e.g., `docs/`).
+2. Build and run the executable.
+3. On the first run, you will see the multithreaded indexing process in action.
+4. Type a word to search across all indexed documents.
+5. Restart the application to see the instant cache-loading feature!
 
-После успешной сборки запустите исполняемый файл, передав ему путь к папке с текстовыми документами (.txt).
+## 📝 Example Output
 
-# На Linux / macOS
-./search_engine --dir /path/to/your/docs
-
-# На Windows
-.\Debug\search_engine.exe --dir C:\path\to\your\docs
-
-В программе реализован REPL (Read-Eval-Print Loop). Просто вводите слова для поиска, и система выдаст Топ-5 релевантных документов. Для выхода введите команду !exit.
-
-Пример работы:
-
-=== Mini Search Engine Initialized ===
-Type your query (or type '!exit' to quit):
-
-Search > c++ algorithms
-Found documents (Top-2):
-  File: /path/to/docs/doc3.txt (Relevance: 0.854)
-  File: /path/to/docs/doc2.txt (Relevance: 0.123)
-  
-Search > !exit
-
-Алгоритмическое ядро покрыто unit-тестами. Чтобы запустить их, находясь в папке build, выполните:
-
-# На Linux / macOS
-./search_tests
-
-# На Windows
-.\Debug\search_tests.exe
+```text
+Trying to load the index from cache (index.bin)...
+Cache not found. Starting multithreaded indexing...
+Indexing completed. Saving to cache...
+Cache saved successfully.
+Total documents in index: 154
+Search engine is ready!
+Enter word to search: apple
+Found in: doc1.txt (3 occurrences), doc4.txt (1 occurrence)
