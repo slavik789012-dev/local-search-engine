@@ -10,6 +10,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_library(search_core
     src/inverted_index.cpp
     src/search_server.cpp
+    src/tcp_server.cpp
 )
 
 add_executable(search_engine

@@ -8,6 +8,7 @@
 #include <thread>
 #include "inverted_index.h"
 #include "search_server.h"
+#include "tcp_server.h"
 
 namespace fs = std::filesystem;
 
@@ -23,11 +24,25 @@ std::string ReadFile(const fs::path& filepath) {
 
 int main(int argc, char* argv[]) {
     try {
-        if (argc != 3 || std::string(argv[1]) != "--dir") {
-            throw std::invalid_argument("Usage: ./search_engine --dir <path>");
+        std::string dir_path;
+
+        // Гибкая логика запуска:
+        if (argc == 3 && std::string(argv[1]) == "--dir") {
+            // Запуск из консоли сервера
+            dir_path = argv[2];
+        }
+        else if (argc == 1) {
+            // Запуск из Visual Studio без аргументов
+            std::cout << "Enter the absolute path to your docs folder: ";
+            std::getline(std::cin, dir_path);
+        }
+        else {
+            throw std::invalid_argument("Usage: ./search_engine --dir <path>\nOr run without arguments for interactive mode.");
         }
 
-        std::string dir_path = argv[2];
+        if (dir_path.empty()) {
+            throw std::invalid_argument("Directory path cannot be empty.");
+        }
 
         std::cout << "DEBUG: Looking for directory at: " << fs::absolute(dir_path) << std::endl;
 
@@ -41,15 +56,17 @@ int main(int argc, char* argv[]) {
                 text_files.push_back(entry.path());
             }
         }
+
         if (text_files.empty()) {
             throw std::runtime_error("Directory is empty or contains no .txt files.");
         }
+
         size_t num_threads = std::thread::hardware_concurrency();
         if (num_threads == 0) num_threads = 4;
         if (num_threads > text_files.size()) num_threads = text_files.size();
+
         std::vector<std::thread> threads;
         size_t chunk_size = text_files.size() / num_threads;
-
 
         InvertedIndex index;
         const std::string cache_filename = "index.bin";
@@ -87,44 +104,17 @@ int main(int argc, char* argv[]) {
                 std::cerr << "Error: failed to save cache to file!\n";
             }
         }
+
         std::cout << "Total documents in index: " << index.GetSize() << "\n";
-        std::cout << "Search engine is ready!\n";
 
-        SearchServer server(index);
-        std::string query;
-        while (true) {
-            std::cout << "Search > ";
-            if (!std::getline(std::cin, query)) break;
-            if (query.empty()) continue;
-            if (query == "!exit") break;
-
-            std::cout << "\n[DEBUG] Original query: {" << query << "}\n";
-            std::vector<std::string_view> tokens = InvertedIndex::SplitBySpaces(query);
-
-            std::cout << "[DEBUG] The query has been split into: " << tokens.size() << " word(s).\n";
-            for (std::string_view view : tokens) {
-                std::string word = InvertedIndex::NormalizeWord(view);
-                std::cout << "[DEBUG] A note after normalization: {" << word << "}\n";
-
-                const auto& entries = index.GetWordEntries(word);
-                if (entries.empty()) {
-                    std::cout << "[DEBUG] ERROR: There isn't {" << word << "} not even in the dictionary!\n";
-                }
-                else {
-                    std::cout << "[DEBUG] SUCCESS: The Word {" << word << "} found in " << entries.size() << " documents.\n";
-                }
-            }
-            std::cout << "-----------------------\n";
-
-            auto results = server.search(query);
-            if (results.empty()) std::cout << "No matches found.\n";
-            else {
-                std::cout << "Found documents (Top-" << results.size() << "):\n";
-                for (const auto& doc : results) {
-                    std::cout << "  File: " << index.GetDocumentName(doc.id)
-                        << " (Relevance: " << doc.relevance << ")\n";
-                }
-            }
+        SearchServer search_server(index);
+        try {
+            TcpServer server(8080, search_server);
+            server.Run();
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Server fatal error: " << e.what() << "\n";
+            return 1;
         }
     }
     catch (const std::exception& e) {

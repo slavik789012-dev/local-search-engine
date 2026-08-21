@@ -107,7 +107,7 @@ bool InvertedIndex::load(const std::string& filename)
     size_t docs_size = 0;
     in.read(reinterpret_cast<char*>(&docs_size), sizeof(docs_size));
     docs_.resize(docs_size);
-    for (int i = 0; i < docs_size; ++i) {
+    for (size_t i = 0; i < docs_size; ++i) {
         size_t docs_name_size = 0;
         in.read(reinterpret_cast<char*>(&docs_name_size), sizeof(docs_name_size));
         docs_[i].resize(docs_name_size);
@@ -115,7 +115,7 @@ bool InvertedIndex::load(const std::string& filename)
     }
     size_t index_size = 0;
     in.read(reinterpret_cast<char*>(&index_size), sizeof(index_size));
-    for (int i = 0; i < index_size; ++i) {
+    for (size_t i = 0; i < index_size; ++i) {
         std::string word;
         size_t word_size = 0;
         in.read(reinterpret_cast<char*>(&word_size), sizeof(word_size));
